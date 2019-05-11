@@ -11,7 +11,6 @@
 #define N_IMAGES 1
 
 #define NUM_THREADS 256
-#define NUM_BLKS (IMG_HEIGHT*IMG_WIDTH)/NUM_THREADS
 
 
 typedef unsigned char uchar;
@@ -181,7 +180,7 @@ int main() {
     for (int i = 0; i < N_IMAGES; i++) {
         uchar *img_in = &images_in[i * IMG_WIDTH * IMG_HEIGHT];
         uchar *img_out = &images_out_cpu[i * IMG_WIDTH * IMG_HEIGHT];
-//        process_image(img_in, img_out);
+		process_image(img_in, img_out);
     }
     t_finish = get_time_msec();
     printf("total time %f [msec]\n", t_finish - t_start);
@@ -214,16 +213,10 @@ int main() {
     for (int i=0; i < N_IMAGES; i++) {
 		// Copying src image from the input images
 		cudaMemcpy(image_in, &images_in[i * IMG_WIDTH*IMG_HEIGHT], IMG_WIDTH*IMG_HEIGHT, cudaMemcpyDefault);
-
-		//printf("\n Image pixels are:\n");
-		//for (int i = 0; i < 256; i++) {
-		//	for(int j = 0; j < 256; j++)
-		//		printf("%d ", image_in[i*256 + j]);
-		//	printf("\n");
-		//}
 		
+		// TODO: debug, remove later
 		cudaMemset(temp_histogram, 0, 256 * sizeof(*temp_histogram));
-		process_image_kernel <<< NUM_BLKS, NUM_THREADS >>> (image_in, image_out, temp_histogram);   
+		cudaMemset(temp_cdf, 0, 256 * sizeof(*temp_cdf));
 
 		process_image_kernel <<< 1, NUM_THREADS >>> (image_in, image_out, temp_histogram, temp_cdf);   
 
