@@ -93,19 +93,13 @@ __device__ void prefix_sum(int arr[], int arr_size, int histogram[]) {
 __global__ void process_image_kernel(uchar *in, uchar *out, int temp_histogram[]) {
 
     int histogram[256] = { 0 };
-//	int bid = blockIdx.x;
+	int bid = blockIdx.x;
 	int tid = threadIdx.x;
 
-   // for (int i = 0; i < NUM_BLKS; i++) {
+	atomicAdd(&temp_histogram[ in[tid + bid*NUM_THREADS]] , 1); // TODO: remove later
+	atomicAdd(&histogram[in[tid + bid*NUM_THREADS]], 1);
 
-		//for (int j=0; ? ; j+= blockDim.x)
-//		temp_histogram[ in[tid + i*NUM_THREADS] ]++;
-		atomicAdd(&temp_histogram[ in[tid + blockIdx.x*NUM_THREADS]] , 1);
-    //}
-
-	//__syncthreads();
-
-return;
+	__syncthreads();
 
     int cdf[256] = { 0 };
 
@@ -181,7 +175,7 @@ int main() {
 	int *temp_histogram;
 	int cpu_histogram[256] = { 0 };
 	int total_sum = 0;
-    CUDA_CHECK( cudaMalloc((void **)&temp_histogram, 256) );
+    CUDA_CHECK( cudaMalloc((void **)&temp_histogram, 256 * sizeof(*temp_histogram)) );
 
     // GPU task serial computation
     printf("\n=== GPU Task Serial ===\n"); //Do not change
@@ -204,10 +198,10 @@ int main() {
 		//	printf("\n");
 		//}
 		
-		cudaMemset(temp_histogram, 0, 256);
+		cudaMemset(temp_histogram, 0, 256 * sizeof(*temp_histogram));
 		process_image_kernel <<< NUM_BLKS, NUM_THREADS >>> (image_in, image_out, temp_histogram);   
 
-		cudaMemcpy(cpu_histogram, temp_histogram, 256, cudaMemcpyDefault);
+		cudaMemcpy(cpu_histogram, temp_histogram, 256 * sizeof(*temp_histogram), cudaMemcpyDefault);
 		printf("\n\nsize of int: %lu", sizeof(int));
 
 		printf ("\n\nHistogram array is as followed:\n");
