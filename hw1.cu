@@ -92,16 +92,21 @@ __device__ void prefix_sum(int arr[], int arr_size, int histogram[]) {
 
 __global__ void process_image_kernel(uchar *in, uchar *out, int temp_histogram[]) {
 
-    int histogram[256] = { 0 };
+    __shared__ int l_histogram[256];
 	int bid = blockIdx.x;
 	int tid = threadIdx.x;
+	int tbsize = blockDim.x;
 
-	atomicAdd(&temp_histogram[ in[tid + bid*NUM_THREADS]] , 1); // TODO: remove later
-	atomicAdd(&histogram[in[tid + bid*NUM_THREADS]], 1);
+	// zero histogram
+	l_histogram[tid] = 0;
+
+	for(int i = tid; i < IMG_WIDTH * IMG_HEIGHT; i += tbsize)
+		atomicAdd(&l_histogram[in[i]], 1);
 
 	__syncthreads();
 
-    int cdf[256] = { 0 };
+	// for debug purposes TODO: delete
+	temp_histogram[tid] = l_histogram[tid];
 
 //	cudaMemset(cdf+1, 0, 254);
 	cdf[0] = histogram[0];
@@ -201,9 +206,11 @@ int main() {
 		cudaMemset(temp_histogram, 0, 256 * sizeof(*temp_histogram));
 		process_image_kernel <<< NUM_BLKS, NUM_THREADS >>> (image_in, image_out, temp_histogram);   
 
+		process_image_kernel <<< 1, NUM_THREADS >>> (image_in, image_out, temp_histogram, temp_cdf);   
 		cudaMemcpy(cpu_histogram, temp_histogram, 256 * sizeof(*temp_histogram), cudaMemcpyDefault);
 		printf("\n\nsize of int: %lu", sizeof(int));
 
+		// Debug prints TODO: remove later
 		printf ("\n\nHistogram array is as followed:\n");
 		for (int i=0; i< 4; i++) {
 			for (int j = 0; j < 64; j++) {
