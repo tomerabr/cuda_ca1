@@ -77,23 +77,37 @@ __device__ uchar arr_min(uchar arr[], int arr_size) {
     return 0; //TODO
 }
 
+// this function implements the Kiggle-Stone algorithm
 __device__ void prefix_sum(int arr[], int arr_size, int histogram[]) {
  
-// TODO: can it be MORE parallel ?
-    for (int i = 1; i < (arr_size-2)/2; i++) {
+	int tbsize = blockDim.x;
+	int tid = threadIdx.x;
+	int inc;
+ 	
+ 	for (int stride = 1; stride < tbsize; stride *= 2) {
+		
+		if (tid >= arr_size)
+			continue;
 
-		arr[i] = arr[i-1] + histogram[i];
-		arr[255 - i] = arr[(arr_size-1) - (i-1) ] - histogram[(arr_size-1) - (i-1)];
-    }
+ 		if (tid >= stride) {
+ 		inc = arr[tid - stride];
+ 		}
+ 		__syncthreads();
 
+ 		if (tid >= stride) {
+			arr[tid] += inc;
+ 		}
 
-    return; //TODO
+ 		__syncthreads();
+ 	}
+
+    return;
 }
 
-__global__ void process_image_kernel(uchar *in, uchar *out, int temp_histogram[]) {
+__global__ void process_image_kernel(uchar *in, uchar *out, int temp_histogram[], int temp_cdf[]) {
 
     __shared__ int l_histogram[256];
-	int bid = blockIdx.x;
+    __shared__ int l_cdf[256];
 	int tid = threadIdx.x;
 	int tbsize = blockDim.x;
 
@@ -108,16 +122,16 @@ __global__ void process_image_kernel(uchar *in, uchar *out, int temp_histogram[]
 	// for debug purposes TODO: delete
 	temp_histogram[tid] = l_histogram[tid];
 
-//	cudaMemset(cdf+1, 0, 254);
-	cdf[0] = histogram[0];
-	cdf[255] = IMG_HEIGHT*IMG_WIDTH;
+	// prepare the cdf array in advance
+	l_cdf[tid] = l_histogram[tid];
 
 	__syncthreads();
 
 //	prefix_sum <<< 254/2, 2 >>> (cdf, 256, histogram);
 
-	if (tid < 2)
-		prefix_sum(cdf, 256, histogram);
+	prefix_sum(l_cdf, 256, l_histogram);
+
+	temp_cdf[tid] = l_cdf[tid];
 
 	__syncthreads();
 
@@ -178,9 +192,14 @@ int main() {
 	uchar *image_out;
 
 	int *temp_histogram;
+	int *temp_cdf;
 	int cpu_histogram[256] = { 0 };
+	int cpu_cdf[256] = { 0 };
 	int total_sum = 0;
+
+    // TODO: debug, remove later
     CUDA_CHECK( cudaMalloc((void **)&temp_histogram, 256 * sizeof(*temp_histogram)) );
+    CUDA_CHECK( cudaMalloc((void **)&temp_cdf, 256 * sizeof(*temp_cdf)) );
 
     // GPU task serial computation
     printf("\n=== GPU Task Serial ===\n"); //Do not change
@@ -207,16 +226,18 @@ int main() {
 		process_image_kernel <<< NUM_BLKS, NUM_THREADS >>> (image_in, image_out, temp_histogram);   
 
 		process_image_kernel <<< 1, NUM_THREADS >>> (image_in, image_out, temp_histogram, temp_cdf);   
+
+		cudaDeviceSynchronize();
+
+		// TODO: debug, remove later
 		cudaMemcpy(cpu_histogram, temp_histogram, 256 * sizeof(*temp_histogram), cudaMemcpyDefault);
-		printf("\n\nsize of int: %lu", sizeof(int));
+		cudaMemcpy(cpu_cdf, temp_cdf, 256 * sizeof(*temp_cdf), cudaMemcpyDefault);
 
 		// Debug prints TODO: remove later
 		printf ("\n\nHistogram array is as followed:\n");
 		for (int i=0; i< 4; i++) {
 			for (int j = 0; j < 64; j++) {
 				printf("h[%d] = %d  ",i*64 + j , cpu_histogram[i*64 + j]);
-//				total_sum += cpu_histogram[i*64 + j];
-				
 			}
 
 		printf("\n\n");
@@ -225,9 +246,16 @@ int main() {
 		for(int i = 0; i < 256; i++)
 			total_sum += cpu_histogram[i];
 
-	printf("Total sum is: %d\n", total_sum);
-	printf("\n\n");
-	printf("\n\n");
+		printf("Total sum is: %d\n", total_sum);
+
+		printf ("\n\nCDF array is as followed:\n");
+		for (int i=0; i< 4; i++) {
+			for (int j = 0; j < 64; j++) {
+				printf("h[%d] = %d  ",i*64 + j , cpu_cdf[i*64 + j]);
+			}
+
+		printf("\n\n");
+		}
 
     }
     //   1. copy the relevant image from images_in to the GPU memory you allocated CHECKED
