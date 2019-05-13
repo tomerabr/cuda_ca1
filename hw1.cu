@@ -72,8 +72,17 @@ long long int distance_sqr_between_image_arrays(uchar *img_arr1, uchar *img_arr2
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__device__ uchar arr_min(uchar arr[], int arr_size) {
-    return 0; //TODO
+__device__ int arr_min(int arr[], int arr_size) {//return the min
+	int tid = threadIdx.x;
+	int half_length = arr_size / 2;
+	while (half_length >= 1) {
+		for (int i = tid; i < half_length; i += blockDim.x) {
+			if(arr[tid + i] < arr[i]) arr[i] = arr[tid + i];
+		}
+		__syncthreads();
+		half_length /= 2;
+		}
+    return arr[0]; //TODO
 }
 
 // this function implements the Kiggle-Stone algorithm
@@ -101,6 +110,12 @@ __device__ void prefix_sum(int arr[], int arr_size, int histogram[]) {
  	}
 
     return;
+}
+
+__device__ void mapCalc(int map[], int min, int cdf[]){
+	int id = threadIdx.x;
+	int map_value = (cdf[id] - min) / (IMG_WIDTH * IMG_HEIGHT - min) * 255;
+    map[id] = map_value;
 }
 
 __global__ void process_image_kernel(uchar *in, uchar *out, int temp_histogram[], int temp_cdf[]) {
@@ -134,19 +149,17 @@ __global__ void process_image_kernel(uchar *in, uchar *out, int temp_histogram[]
 
 	__syncthreads();
 
-    //int cdf_min = 0;
-    //for (int i = 0; i < 256; i++) {
-    //    if (cdf[i] != 0) {
-    //        cdf_min = cdf[i];
-    //        break;
-    //    }
-    //}
+    int min = arr_min(l_histogram, 256);
+	
+	temp_cdf[tid] = l_histogram[tid];
+	
+	__syncthreads();
 
-    //uchar map[256] = { 0 };
-    //for (int i = 0; i < 256; i++) {
-    //    int map_value = (float)(cdf[i] - cdf_min) / (IMG_WIDTH * IMG_HEIGHT - cdf_min) * 255;
-    //    map[i] = (uchar)map_value;
-    //}
+    int map[256] = { 0 };
+	mapCalc(map, min, l_cdf);
+	
+	__syncthreads();
+    
 
     //for (int i = 0; i < IMG_WIDTH * IMG_HEIGHT; i++) {
     //    img_out[i] = map[img_in[i]];
